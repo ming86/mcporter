@@ -323,11 +323,10 @@ export async function createOAuthSession(
 		definition,
 		logger,
 	);
+	const waitForAuthorizationCode = () => provider.waitForAuthorizationCode();
 	return {
-		provider: Object.assign(provider, {
-			waitForAuthorizationCode: () => provider.waitForAuthorizationCode(),
-		}),
-		waitForAuthorizationCode: () => provider.waitForAuthorizationCode(),
+		provider,
+		waitForAuthorizationCode,
 		close,
 	};
 }
