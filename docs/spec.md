@@ -17,6 +17,7 @@ summary: 'Plan for the mcp-runtime package replacing the Sweetistics pnpm MCP he
   - `callOnce()` convenience matching today’s single-call flow.
   - Typed utilities for env/header resolution and stdio command execution.
 - CLI entry point (`npx mcp-runtime list|call`) built on the same runtime.
+- CLI generator (`npx mcp-runtime generate-cli`) that emits standalone CLIs (plain TypeScript or bundled JS) with embedded schemas and Commander-based subcommands, targeting Node or Bun.
 - Test harness using the Sweetistics MCP fixtures to validate every configured server definition.
 - Documentation: README, usage examples, migration guide for replacing `pnpm mcp:*`.
 
@@ -32,7 +33,7 @@ summary: 'Plan for the mcp-runtime package replacing the Sweetistics pnpm MCP he
 - Document Cursor-compatible `config/mcp-runtime.json` structure; support env-sourced headers and stdio commands while keeping inline overrides available for scripts.
 
 ## Schema-Aware Proxy Strategy
-- Cache tool schemas on first access; tolerate failures by falling back to raw `callTool`.
+- Cache tool schemas on first access, persist them under `~/.mcp-runtime/<server>/schema.json` for reuse across processes, and tolerate failures by falling back to raw `callTool`.
 - Allow direct method-style invocations such as `context7.getLibraryDocs("react")` by:
   - Mapping camelCase properties to kebab-case tool names.
   - Detecting positional arguments and assigning them to required schema fields in order.
@@ -43,11 +44,18 @@ summary: 'Plan for the mcp-runtime package replacing the Sweetistics pnpm MCP he
 - Encourage lightweight composition helpers in examples (e.g., resolving then fetching Context7 docs) while keeping library exports generic.
 - Back the proxy with targeted unit tests that cover primitive-only calls, positional tuples + option bags, and error fallbacks when schemas are missing.
 
+## Standalone CLI Generation
+- `generate-cli` should accept inline JSON, file paths, or existing config names and produce a ready-to-run CLI that maps tools to Commander subcommands.
+- Embed schemas (via `listTools { includeSchema: true }`) directly in the generated source so repeat executions avoid additional metadata calls.
+- Support optional bundling through esbuild, producing Node-friendly `.cjs` files or Bun-ready `.js` binaries with executable shebangs.
+- Surface flags for output path, runtime target (`node` or `bun`), bundle destination, and per-call timeout (default 30s).
+- Add integration tests asserting the generated CLI can list tools, execute with positional/flag arguments, and hydrate cache files without additional list calls.
+
 ## Configuration
 - Single file `config/mcp-runtime.json` mirrors Cursor/Claude schema: `mcpServers` map with entries containing `baseUrl` or `command`+`args`, optional `headers`, `env`, `description`, `auth`, `tokenCacheDir`, and convenience `bearerToken`/`bearerTokenEnv` fields.
 - Optional `imports` array (defaulting to ['cursor', 'claude-code', 'claude-desktop', 'codex']) controls auto-merging of editor configs; entries earlier in the list win conflicts while local definitions can still override.
 - Provide `configPath` override for scripts/tests; keep inline overrides in examples for completeness but default to file-based configuration.
-- Add fixtures validating HTTP vs. stdio normalization and header/env behavior.
+- Add fixtures validating HTTP vs. stdio normalization, header/env behavior, and editor config imports (Cursor, Claude Code/Desktop, Codex) to ensure priority ordering matches defaults.
 
 ## Work Phases
 1. **Scaffold Package**
@@ -58,6 +66,7 @@ summary: 'Plan for the mcp-runtime package replacing the Sweetistics pnpm MCP he
 3. **CLI Surface**
    - Implement `list` (with optional schema) and `call` commands.
    - Ensure output parity with existing helper.
+   - Add `generate-cli` for standalone/bundled CLIs with embedded schema caching.
 4. **Testing & Fixtures**
    - Mock representative MCP servers (stdio + HTTP + OAuth) for integration tests.
    - Snapshot output for `list` vs. `call`.
