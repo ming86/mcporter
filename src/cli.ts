@@ -5,6 +5,7 @@ import fsPromises from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js';
+import ora from 'ora';
 import type { CliArtifactMetadata, SerializedServerDefinition } from './cli-metadata.js';
 import { readCliMetadata } from './cli-metadata.js';
 import type { ServerDefinition, ServerSource } from './config.js';
@@ -51,6 +52,9 @@ const hasNoColor = process.env.NO_COLOR !== undefined;
 const stdoutStream = process.stdout as NodeJS.WriteStream | undefined;
 const supportsAnsiColor =
   !hasNoColor && (forceEnableColor || (!forceDisableColor && Boolean(stdoutStream?.isTTY)));
+const isCI = Boolean(process.env.CI && process.env.CI !== '0' && process.env.CI.toLowerCase() !== 'false');
+const spinnerDisabled = process.env.MCPORTER_NO_SPINNER === '1';
+const supportsSpinner = Boolean(stdoutStream?.isTTY && !isCI && !spinnerDisabled);
 
 function colorize(code: number, text: string): string {
   if (!supportsAnsiColor) {
@@ -703,6 +707,8 @@ export async function handleList(runtime: Awaited<ReturnType<typeof createRuntim
     }
 
     console.log(`Listing ${servers.length} server(s) (per-server timeout: ${perServerTimeoutSeconds}s)`);
+    const spinner = supportsSpinner ? ora(`Discovering ${servers.length} server(s)…`).start() : undefined;
+    let completedCount = 0;
 
     const tasks = servers.map((server) => {
       const task = (async (): Promise<ListSummaryResult> => {
@@ -729,7 +735,28 @@ export async function handleList(runtime: Awaited<ReturnType<typeof createRuntim
       })();
 
       task.then((result) => {
-        printServerListResult(result, perServerTimeoutMs);
+        if (spinner?.isSpinning) {
+          spinner.stop();
+          spinner.clear();
+        }
+        completedCount += 1;
+        const { line, summary } = renderServerListRow(result, perServerTimeoutMs);
+        console.log(line);
+
+        if (!spinner) {
+          return;
+        }
+        const remaining = servers.length - completedCount;
+        if (remaining <= 0) {
+          spinner.stop();
+          spinner.succeed(`Listed ${servers.length} server${servers.length === 1 ? '' : 's'}.`);
+          return;
+        }
+        const latest = `${result.server.name} — ${summary}`;
+        setImmediate(() => {
+          spinner.text = `Listing servers… ${completedCount}/${servers.length} · latest: ${latest}`;
+          spinner.start();
+        });
       });
 
       return task;
@@ -742,10 +769,10 @@ export async function handleList(runtime: Awaited<ReturnType<typeof createRuntim
   const definition = runtime.getDefinition(target);
   const timeoutMs = flags.timeoutMs ?? LIST_TIMEOUT_MS;
   const sourcePath = formatSourceSuffix(definition.source, true);
-  console.log(`- ${target}`);
-  if (sourcePath) {
-    console.log(`  Source: ${sourcePath}`);
-  }
+    console.log(`- ${target}`);
+    if (sourcePath) {
+      console.log(`  Source: ${sourcePath}`);
+    }
   try {
     const tools = await withTimeout(runtime.listTools(target, { includeSchema: flags.schema }), timeoutMs);
     if (tools.length === 0) {
@@ -782,7 +809,7 @@ type ListSummaryResult =
       durationMs: number;
     };
 
-function printServerListResult(result: ListSummaryResult, timeoutMs: number): void {
+function renderServerListRow(result: ListSummaryResult, timeoutMs: number): { line: string; summary: string } {
   const description = result.server.description ? ` — ${result.server.description}` : '';
   const durationLabel = dimText(`${(result.durationMs / 1000).toFixed(1)}s`);
   const sourceSuffix = formatSourceSuffix(result.server.source);
@@ -793,26 +820,31 @@ function printServerListResult(result: ListSummaryResult, timeoutMs: number): vo
       result.tools.length === 0
         ? 'no tools reported'
         : `${result.tools.length === 1 ? '1 tool' : `${result.tools.length} tools`}`;
-    console.log(`${prefix} (${toolSuffix}, ${durationLabel})${sourceSuffix}`);
-    return;
+    return {
+      line: `${prefix} (${toolSuffix}, ${durationLabel})${sourceSuffix}`,
+      summary: toolSuffix,
+    };
   }
 
   const timeoutSeconds = Math.round(timeoutMs / 1000);
   let formatter: (text: string) => string = redText;
-  let note: string;
+  let plainNote: string;
   const { error } = result;
   if (error instanceof UnauthorizedError) {
-    note = `auth required — run 'mcporter auth ${result.server.name}' to complete the OAuth flow`;
+    plainNote = `auth required — run 'mcporter auth ${result.server.name}' to complete the OAuth flow`;
     formatter = yellowText;
   } else if (error instanceof Error && error.message === 'Timeout') {
-    note = `timed out after ${timeoutSeconds}s`;
+    plainNote = `timed out after ${timeoutSeconds}s`;
   } else if (error instanceof Error) {
-    note = error.message;
+    plainNote = error.message;
   } else {
-    note = String(error);
+    plainNote = String(error);
   }
 
-  console.log(`${prefix} (${formatter(note)}, ${durationLabel})${sourceSuffix}`);
+  return {
+    line: `${prefix} (${formatter(plainNote)}, ${durationLabel})${sourceSuffix}`,
+    summary: plainNote,
+  };
 }
 
 // handleCall invokes a tool, prints JSON, and optionally tails logs.
