@@ -147,6 +147,7 @@ export async function handleList(
   const serverSummary = `${definition.description ?? '<none>'}${transportSummary ? ` [${transportSummary}]` : ''}`;
   const headerLabel = boldText(target);
   console.log(`${headerLabel} - ${serverSummary}`);
+  console.log('');
   if (sourcePath) {
     console.log(`  Source: ${sourcePath}`);
   }
