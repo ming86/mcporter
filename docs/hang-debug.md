@@ -62,6 +62,9 @@ child process, which mcporter will now terminate during shutdown.
   debugging and need the process to stay alive.
 - You can still set `MCPORTER_FORCE_EXIT=1` explicitly when you want to force
   termination even with `MCPORTER_NO_FORCE_EXIT` in play.
+- Stdio servers have their stderr output suppressed by default; set
+  `MCPORTER_STDIO_LOGS=1` to print their logs (they’re also surfaced whenever a
+  child exits with a non-zero status).
 
 ## Upstream Tracking
 

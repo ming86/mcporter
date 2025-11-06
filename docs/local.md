@@ -50,5 +50,6 @@ pnpm mcporter:call context7.get-library-docs topic=hooks
 - `MCPORTER_DEBUG_HANG=1` – dumps active handles around shutdown (pairs well with tmux; see `docs/hang-debug.md`).
 - `MCPORTER_NO_FORCE_EXIT=1` – keeps the process alive even after cleanup (useful while inspecting debug output).
 - `MCPORTER_FORCE_EXIT=1` – force termination even if the above is set.
+- `MCPORTER_STDIO_LOGS=1` – print the buffered stderr output from stdio MCP servers (handy when debugging noisy backends).
 
 All three entry points honour the same `--config`, `--root`, and `--log-level` flags as the published CLI.

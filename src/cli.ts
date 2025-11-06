@@ -11,6 +11,7 @@ import { readCliMetadata } from './cli-metadata.js';
 import type { ServerDefinition, ServerSource } from './config.js';
 import { generateCli } from './generate-cli.js';
 import { createRuntime, type ServerToolInfo } from './runtime.js';
+import { createCallResult, type CallResult } from './result-utils.js';
 import {
   createPrefixedConsoleLogger,
   parseLogLevel,
@@ -20,6 +21,7 @@ import {
 } from './logging.js';
 
 type FlagMap = Partial<Record<string, string>>;
+type OutputFormat = 'auto' | 'text' | 'markdown' | 'json' | 'raw';
 
 let activeLogLevel: LogLevel = resolveLogLevelFromEnv();
 let activeLogger: Logger = createPrefixedConsoleLogger('mcporter', activeLogLevel);
@@ -736,10 +738,12 @@ export async function handleList(runtime: Awaited<ReturnType<typeof createRuntim
 
     console.log(`Listing ${servers.length} server(s) (per-server timeout: ${perServerTimeoutSeconds}s)`);
     const spinner = supportsSpinner ? ora(`Discovering ${servers.length} server(s)…`).start() : undefined;
+    const spinnerActive = Boolean(spinner);
+    const renderedResults: Array<{ line: string; summary: string } | undefined> = new Array(servers.length);
     let completedCount = 0;
 
-    const tasks = servers.map((server) => {
-      const task = (async (): Promise<ListSummaryResult> => {
+    const tasks = servers.map((server, index) =>
+      (async (): Promise<ListSummaryResult> => {
         const startedAt = Date.now();
         try {
           const tools = await withTimeout(
@@ -760,37 +764,75 @@ export async function handleList(runtime: Awaited<ReturnType<typeof createRuntim
             durationMs: Date.now() - startedAt,
           };
         }
-      })();
-
-      task.then((result) => {
-        if (spinner?.isSpinning) {
-          spinner.stop();
-          spinner.clear();
-        }
+      })().then((result) => {
+        const rendered = renderServerListRow(result, perServerTimeoutMs);
+        renderedResults[index] = rendered;
         completedCount += 1;
-        const { line, summary } = renderServerListRow(result, perServerTimeoutMs);
-        console.log(line);
 
-        if (!spinner) {
-          return;
+        if (spinnerActive && spinner) {
+          spinner.stopAndPersist({ symbol: '-', text: rendered.line });
+          const remaining = servers.length - completedCount;
+          if (remaining > 0) {
+            const latestSummary = truncateForSpinner(`${result.server.name} — ${rendered.summary}`);
+            spinner.text = `Listing servers… ${completedCount}/${servers.length} · latest: ${latestSummary}`;
+            spinner.start();
+          }
         }
-        const remaining = servers.length - completedCount;
-        if (remaining <= 0) {
-          spinner.stop();
-          spinner.succeed(`Listed ${servers.length} server${servers.length === 1 ? '' : 's'}.`);
-          return;
-        }
-        const latest = `${result.server.name} — ${summary}`;
-        setImmediate(() => {
-          spinner.text = `Listing servers… ${completedCount}/${servers.length} · latest: ${latest}`;
-          spinner.start();
-        });
-      });
 
-      return task;
-    });
+        return result;
+      })
+    );
 
     await Promise.all(tasks);
+
+    type StatusCategory = 'ok' | 'auth' | 'offline' | 'error';
+    const errorCounts: Record<StatusCategory, number> = {
+      ok: 0,
+      auth: 0,
+      offline: 0,
+      error: 0,
+    };
+    const authRecommendations: Array<{ server: string; command: string }> = [];
+    renderedResults.forEach((entry, index) => {
+      if (!entry) {
+        return;
+      }
+      const category = (entry as { category?: StatusCategory }).category ?? 'error';
+      errorCounts[category] = (errorCounts[category] ?? 0) + 1;
+      if (category === 'auth') {
+        const authCommand = (entry as { authCommand?: string }).authCommand;
+        if (!authCommand) {
+          return;
+        }
+        const serverDefinition = servers[index];
+        const serverLabel = serverDefinition?.name ?? 'unknown';
+        authRecommendations.push({ server: serverLabel, command: authCommand });
+      }
+    });
+    if (spinnerActive && spinner) {
+      spinner.stop();
+    }
+    const okSummary = `${errorCounts.ok} healthy`;
+    const parts = [
+      okSummary,
+      ...(errorCounts.auth > 0 ? [`${errorCounts.auth} auth required`] : []),
+      ...(errorCounts.offline > 0 ? [`${errorCounts.offline} offline`] : []),
+      ...(errorCounts.error > 0 ? [`${errorCounts.error} errors`] : []),
+    ];
+    console.log(`✔ Listed ${servers.length} server${servers.length === 1 ? '' : 's'} (${parts.join('; ')}).`);
+
+    if (authRecommendations.length > 0) {
+      console.log('');
+      console.log('Next steps:');
+      const seen = new Set<string>();
+      for (const recommendation of authRecommendations) {
+        if (seen.has(recommendation.command)) {
+          continue;
+        }
+        seen.add(recommendation.command);
+        console.log(`  • ${recommendation.server ?? 'the server'} — run '${recommendation.command}'`);
+      }
+    }
     return;
   }
 
@@ -838,8 +880,20 @@ type ListSummaryResult =
     };
 
 // renderServerListRow formats list output for a single server result.
-function renderServerListRow(result: ListSummaryResult, timeoutMs: number): { line: string; summary: string } {
-  const description = result.server.description ? ` — ${result.server.description}` : '';
+type StatusCategory = 'ok' | 'auth' | 'offline' | 'error';
+
+function renderServerListRow(
+  result: ListSummaryResult,
+  timeoutMs: number
+): {
+  line: string;
+  summary: string;
+  category: StatusCategory;
+  authCommand?: string;
+} {
+  const description = result.server.description
+    ? dimText(` — ${result.server.description}`)
+    : '';
   const durationLabel = dimText(`${(result.durationMs / 1000).toFixed(1)}s`);
   const sourceSuffix = formatSourceSuffix(result.server.source);
   const prefix = `- ${result.server.name}${description}`;
@@ -852,28 +906,25 @@ function renderServerListRow(result: ListSummaryResult, timeoutMs: number): { li
     return {
       line: `${prefix} (${toolSuffix}, ${durationLabel})${sourceSuffix}`,
       summary: toolSuffix,
+      category: 'ok',
     };
   }
 
   const timeoutSeconds = Math.round(timeoutMs / 1000);
-  let formatter: (text: string) => string = redText;
-  let plainNote: string;
-  const { error } = result;
-  if (error instanceof UnauthorizedError) {
-    plainNote = `auth required — run 'mcporter auth ${result.server.name}' to complete the OAuth flow`;
-    formatter = yellowText;
-  } else if (error instanceof Error && error.message === 'Timeout') {
-    plainNote = `timed out after ${timeoutSeconds}s`;
-  } else if (error instanceof Error) {
-    plainNote = error.message;
-  } else {
-    plainNote = String(error);
-  }
-
+  const advice = classifyListError(result.error, result.server.name, timeoutSeconds);
   return {
-    line: `${prefix} (${formatter(plainNote)}, ${durationLabel})${sourceSuffix}`,
-    summary: plainNote,
+    line: `${prefix} (${advice.colored}, ${durationLabel})${sourceSuffix}`,
+    summary: advice.summary,
+    category: advice.category,
+    authCommand: advice.authCommand,
   };
+}
+
+function truncateForSpinner(text: string, maxLength = 72): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, Math.max(0, maxLength - 1))}…`;
 }
 
 // handleCall invokes a tool, prints JSON, and optionally tails logs.
@@ -916,23 +967,126 @@ export async function handleCall(runtime: Awaited<ReturnType<typeof createRuntim
     throw error;
   }
 
-  if (typeof result === 'string') {
-    try {
-      const decoded = JSON.parse(result);
-      console.log(JSON.stringify(decoded, null, 2));
-      tailLogIfRequested(decoded, parsed.tailLog ?? false);
-      dumpActiveHandles('after call (string result)');
-    } catch {
-      console.log(result);
-      tailLogIfRequested(result, parsed.tailLog ?? false);
-      dumpActiveHandles('after call (raw string result)');
+  const wrapped = createCallResult(result);
+  printCallOutput(wrapped, result, parsed.output);
+  tailLogIfRequested(result, parsed.tailLog);
+  dumpActiveHandles('after call (formatted result)');
+}
+
+function printCallOutput<T>(wrapped: CallResult<T>, raw: T, format: OutputFormat): void {
+  switch (format) {
+    case 'raw': {
+      printRaw(raw);
+      return;
     }
+    case 'json': {
+      const jsonValue = wrapped.json();
+      if (jsonValue !== null && attemptPrintJson(jsonValue)) {
+        return;
+      }
+      printRaw(raw);
+      return;
+    }
+    case 'markdown': {
+      const markdown = wrapped.markdown();
+      if (typeof markdown === 'string') {
+        console.log(markdown);
+        return;
+      }
+      const text = wrapped.text();
+      if (typeof text === 'string') {
+        console.log(text);
+        return;
+      }
+      const jsonValue = wrapped.json();
+      if (jsonValue !== null && attemptPrintJson(jsonValue)) {
+        return;
+      }
+      printRaw(raw);
+      return;
+    }
+    case 'text': {
+      const text = wrapped.text();
+      if (typeof text === 'string') {
+        console.log(text);
+        return;
+      }
+      const markdown = wrapped.markdown();
+      if (typeof markdown === 'string') {
+        console.log(markdown);
+        return;
+      }
+      const jsonValue = wrapped.json();
+      if (jsonValue !== null && attemptPrintJson(jsonValue)) {
+        return;
+      }
+      printRaw(raw);
+      return;
+    }
+    case 'auto':
+    default: {
+      const jsonValue = wrapped.json();
+      if (jsonValue !== null && attemptPrintJson(jsonValue)) {
+        return;
+      }
+      const markdown = wrapped.markdown();
+      if (typeof markdown === 'string') {
+        console.log(markdown);
+        return;
+      }
+      const text = wrapped.text();
+      if (typeof text === 'string') {
+        console.log(text);
+        return;
+      }
+      printRaw(raw);
+    }
+  }
+}
+
+function attemptPrintJson(value: unknown): boolean {
+  if (value === undefined) {
+    return false;
+  }
+  try {
+    if (value === null) {
+      console.log('null');
+    } else {
+      console.log(JSON.stringify(value, null, 2));
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function printRaw(raw: unknown): void {
+  if (typeof raw === 'string') {
+    console.log(raw);
     return;
   }
-
-  console.log(JSON.stringify(result, null, 2));
-  tailLogIfRequested(result, parsed.tailLog ?? false);
-  dumpActiveHandles('after call (object result)');
+  if (raw === null) {
+    console.log('null');
+    return;
+  }
+  if (raw === undefined) {
+    console.log('undefined');
+    return;
+  }
+  if (typeof raw === 'bigint') {
+    console.log(raw.toString());
+    return;
+  }
+  try {
+    const serialized = JSON.stringify(raw, null, 2);
+    if (serialized === undefined) {
+      console.log(String(raw));
+    } else {
+      console.log(serialized);
+    }
+  } catch {
+    console.log(String(raw));
+  }
 }
 
 // extractListFlags captures list-specific options such as --schema.
@@ -974,6 +1128,46 @@ function formatSourceSuffix(source: ServerSource | undefined, inline = false): s
   const text = inline ? formatted : `[source: ${formatted}]`;
   const tinted = dimText(text);
   return inline ? tinted : ` ${tinted}`;
+}
+
+function classifyListError(
+  error: unknown,
+  serverName: string,
+  timeoutSeconds: number
+): {
+  colored: string;
+  summary: string;
+  category: StatusCategory;
+  authCommand?: string;
+} {
+  if (error instanceof UnauthorizedError) {
+    const note = yellowText(`auth required — run 'mcporter auth ${serverName}'`);
+    return { colored: note, summary: 'auth required', category: 'auth', authCommand: `mcporter auth ${serverName}` };
+  }
+
+  const rawMessage =
+    error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
+  const normalized = rawMessage.toLowerCase();
+
+  if (normalized.includes('401') || normalized.includes('unauthorized') || normalized.includes('invalid_token')) {
+    const note = yellowText(`auth required — run 'mcporter auth ${serverName}'`);
+    return { colored: note, summary: 'auth required', category: 'auth', authCommand: `mcporter auth ${serverName}` };
+  }
+
+  if (
+    normalized.includes('fetch failed') ||
+    normalized.includes('econnrefused') ||
+    normalized.includes('connect timeout') ||
+    normalized.includes('timed out') ||
+    normalized.includes('timeout') ||
+    normalized.includes('timeout after')
+  ) {
+    const note = redText(`offline — unable to reach server`);
+    return { colored: note, summary: 'offline', category: 'offline' };
+  }
+
+  const note = redText(rawMessage || 'unknown error');
+  return { colored: note, summary: rawMessage || 'unknown error', category: 'error' };
 }
 
 // formatPathForDisplay rewrites absolute paths into user-friendly display strings.
@@ -1127,13 +1321,18 @@ interface CallArgsParseResult {
   server?: string;
   tool?: string;
   args: Record<string, unknown>;
-  tailLog?: boolean;
+  tailLog: boolean;
+  output: OutputFormat;
   timeoutMs?: number;
 }
 
 // parseCallArguments supports selectors, JSON payloads, and key=value args.
+function isOutputFormat(value: string): value is OutputFormat {
+  return value === 'auto' || value === 'text' || value === 'markdown' || value === 'json' || value === 'raw';
+}
+
 export function parseCallArguments(args: string[]): CallArgsParseResult {
-  const result: CallArgsParseResult = { args: {}, tailLog: false };
+  const result: CallArgsParseResult = { args: {}, tailLog: false, output: 'auto' };
   const positional: string[] = [];
   let index = 0;
   while (index < args.length) {
@@ -1158,6 +1357,23 @@ export function parseCallArguments(args: string[]): CallArgsParseResult {
       }
       result.tool = value;
       index += 2;
+      continue;
+    }
+    if (token === '--output') {
+      const value = args[index + 1];
+      if (!value) {
+        throw new Error("--output requires a format (auto|text|markdown|json|raw).");
+      }
+      if (!isOutputFormat(value)) {
+        throw new Error("--output format must be one of: auto, text, markdown, json, raw.");
+      }
+      result.output = value;
+      args.splice(index, 2);
+      continue;
+    }
+    if (token === '--raw') {
+      result.output = 'raw';
+      args.splice(index, 1);
       continue;
     }
     if (token === '--args') {
@@ -1376,6 +1592,8 @@ Commands:
   list [name] [--schema]             List configured MCP servers (and tools for a server)
   call [selector] [flags]            Call a tool (selector like server.tool)
     --tail-log                       Tail log output when the tool returns a log file path
+    --output <format>                Output format: auto|text|markdown|json|raw (default auto)
+    --raw                            Shortcut for --output raw
   auth <name>                        Complete the OAuth flow for a server without listing tools
   inspect-cli <path> [--json]        Show metadata and regeneration info for a generated CLI artifact
   regenerate-cli <path> [options]    Re-run generate-cli using stored metadata to refresh an artifact

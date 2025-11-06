@@ -10,27 +10,56 @@ type MaybeChildProcess = ChildProcess & {
   stdio?: Array<unknown>;
 };
 
+interface StderrMeta {
+  chunks: string[];
+  command?: string;
+  code?: number | null;
+  listeners: Array<{ stream: NodeJS.EventEmitter & { removeListener?: (event: string, listener: (...args: unknown[]) => void) => void }; event: string; handler: (...args: unknown[]) => void }>;
+}
+
+const STDERR_BUFFERS = new WeakMap<MaybeChildProcess, StderrMeta>();
+const STDIO_LOGS_ENABLED = process.env.MCPORTER_STDIO_LOGS === '1';
+
 function destroyStream(stream: unknown): void {
   if (!stream || typeof stream !== 'object') {
     return;
   }
+  const emitter = stream as {
+    on?: (event: string, listener: () => void) => void;
+    off?: (event: string, listener: () => void) => void;
+    removeListener?: (event: string, listener: () => void) => void;
+    destroy?: () => void;
+    end?: () => void;
+    unref?: () => void;
+  };
+  const swallowError = () => {};
   try {
-    (stream as { removeAllListeners?: () => void }).removeAllListeners?.();
+    emitter.on?.('error', swallowError);
   } catch {
     // ignore
   }
   try {
-    (stream as { destroy?: () => void }).destroy?.();
+    emitter.destroy?.();
   } catch {
     // ignore
   }
   try {
-    (stream as { end?: () => void }).end?.();
+    emitter.end?.();
   } catch {
     // ignore
   }
   try {
-    (stream as { unref?: () => void }).unref?.();
+    emitter.unref?.();
+  } catch {
+    // ignore
+  }
+  try {
+    emitter.off?.('error', swallowError);
+  } catch {
+    // ignore
+  }
+  try {
+    emitter.removeListener?.('error', swallowError);
   } catch {
     // ignore
   }
@@ -45,6 +74,12 @@ function waitForChildClose(child: MaybeChildProcess | undefined, timeoutMs: numb
   }
   return new Promise((resolve) => {
     let settled = false;
+    const swallowProcessError = () => {};
+    try {
+      child.on?.('error', swallowProcessError);
+    } catch {
+      // ignore
+    }
     const finish = () => {
       if (settled) {
         return;
@@ -57,6 +92,11 @@ function waitForChildClose(child: MaybeChildProcess | undefined, timeoutMs: numb
       child.removeListener('exit', finish);
       child.removeListener('close', finish);
       child.removeListener('error', finish);
+       try {
+         child.removeListener?.('error', swallowProcessError);
+       } catch {
+         // ignore
+       }
       if (timer) {
         clearTimeout(timer);
       }
@@ -79,6 +119,8 @@ function patchStdioClose(): void {
     return;
   }
 
+  patchStdioStart();
+
   StdioClientTransport.prototype.close = async function patchedClose(): Promise<void> {
     const transport = this as unknown as {
       _process?: MaybeChildProcess | null;
@@ -89,6 +131,7 @@ function patchStdioClose(): void {
     };
     const child = transport._process ?? null;
     const stderrStream = transport._stderrStream ?? null;
+    const meta = child ? STDERR_BUFFERS.get(child) : undefined;
 
     if (stderrStream) {
       // Ensure any piped stderr stream is torn down so no file descriptors linger.
@@ -160,8 +203,103 @@ function patchStdioClose(): void {
 
     child.unref?.();
 
+  if (meta) {
+      // Remove any listeners we attached during start to avoid leaks before printing.
+      for (const { stream, event, handler } of meta.listeners) {
+        try {
+          stream.removeListener?.(event, handler);
+        } catch {
+          // ignore
+        }
+      }
+      const shouldPrint = STDIO_LOGS_ENABLED || (typeof meta.code === 'number' && meta.code !== 0);
+      if (shouldPrint && meta.chunks.length > 0) {
+        const heading = meta.command ? `[mcporter] stderr from ${meta.command}` : '[mcporter] stderr from stdio server';
+        console.log(heading);
+        process.stdout.write(meta.chunks.join(''));
+        if (!meta.chunks[meta.chunks.length - 1]?.endsWith('\n')) {
+          console.log('');
+        }
+      }
+      STDERR_BUFFERS.delete(child);
+    }
+
     transport._process = null;
     transport.onclose?.();
+  };
+
+  proto[marker] = true;
+}
+
+function patchStdioStart(): void {
+  const marker = Symbol.for('mcporter.stdio.startPatched');
+  const proto = StdioClientTransport.prototype as unknown as Record<symbol, unknown>;
+  if (proto[marker]) {
+    return;
+  }
+
+  const originalStart = StdioClientTransport.prototype.start;
+
+  StdioClientTransport.prototype.start = async function patchedStart(this: unknown): Promise<void> {
+    const transport = this as unknown as {
+      _serverParams?: { stderr?: string; command?: string } | undefined;
+      _process?: MaybeChildProcess | null;
+      _stderrStream?: PassThrough | null;
+    };
+
+    if (transport._serverParams && transport._serverParams.stderr !== 'pipe') {
+      transport._serverParams = {
+        ...transport._serverParams,
+        stderr: 'pipe',
+      };
+    }
+
+    await originalStart.apply(this);
+
+    const child = transport._process ?? null;
+    if (child) {
+      const meta: StderrMeta = {
+        chunks: [],
+        command: transport._serverParams?.command,
+        code: null,
+        listeners: [],
+      };
+      STDERR_BUFFERS.set(child, meta);
+
+      const targetStream = transport._stderrStream ?? child.stderr;
+      if (targetStream) {
+        if (typeof (targetStream as { setEncoding?: (enc: string) => void }).setEncoding === 'function') {
+          (targetStream as { setEncoding?: (enc: string) => void }).setEncoding?.('utf8');
+        }
+        const handleChunk = (chunk: unknown) => {
+          if (typeof chunk === 'string') {
+            meta.chunks.push(chunk);
+          } else if (Buffer.isBuffer(chunk)) {
+            meta.chunks.push(chunk.toString('utf8'));
+          }
+        };
+        const swallowError = () => {};
+        (targetStream as NodeJS.EventEmitter).on('data', handleChunk);
+        (targetStream as NodeJS.EventEmitter).on('error', swallowError);
+        meta.listeners.push({
+          stream: targetStream as NodeJS.EventEmitter & { removeListener?: (event: string, listener: (...args: unknown[]) => void) => void },
+          event: 'data',
+          handler: handleChunk,
+        });
+        meta.listeners.push({
+          stream: targetStream as NodeJS.EventEmitter & { removeListener?: (event: string, listener: (...args: unknown[]) => void) => void },
+          event: 'error',
+          handler: swallowError,
+        });
+      }
+
+      child.once('exit', (code: number | null) => {
+        const entry = STDERR_BUFFERS.get(child);
+        if (entry) {
+          entry.code = code;
+        }
+      });
+    }
   };
 
   proto[marker] = true;

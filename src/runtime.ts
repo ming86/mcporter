@@ -303,7 +303,7 @@ class McpRuntime implements Runtime {
           };
         } catch (error) {
           await closeTransportAndWait(this.logger, streamableTransport).catch(() => {});
-          this.logger.warn(`Falling back to SSE transport for '${definition.name}': ${(error as Error).message}`);
+          this.logger.info(`Falling back to SSE transport for '${definition.name}': ${(error as Error).message}`);
           const sseTransport = new SSEClientTransport(definition.command.url, {
             ...baseOptions,
           });

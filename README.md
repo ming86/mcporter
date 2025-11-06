@@ -46,6 +46,7 @@ Helpful flags:
 - `--root <path>` -- working directory for stdio commands.
 - `--log-level <debug|info|warn|error>` -- adjust verbosity (respects `MCPORTER_LOG_LEVEL`).
 - `--tail-log` -- stream the last 20 lines of any log files referenced by the tool response.
+- `--output <format>` or `--raw` -- control formatted output (defaults to pretty-printed auto detection).
 - For OAuth-protected servers such as `vercel`, run `npx mcporter auth vercel` once to complete login.
 
 Timeouts default to 30 s; override with `MCPORTER_LIST_TIMEOUT` or `MCPORTER_CALL_TIMEOUT` when you expect slow startups.
@@ -102,7 +103,7 @@ const result = await runtime.callTool("context7", "resolve-library-id", {
 	args: { libraryName: "react" },
 });
 
-console.log(result); // raw MCP envelope
+console.log(result); // prints JSON/text automatically because the CLI pretty-prints by default
 await runtime.close(); // shuts down transports and OAuth sessions
 ```
 

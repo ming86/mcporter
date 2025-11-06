@@ -62,7 +62,7 @@ function collectText(content: unknown[], joiner: string): string | null {
 
 // tryParseJson pulls JSON payloads out of structured responses or raw strings.
 function tryParseJson(value: unknown): unknown {
-  if (!value) {
+  if (value === undefined || value === null) {
     return null;
   }
   if (typeof value === 'object') {
@@ -134,19 +134,62 @@ export function createCallResult<T = unknown>(raw: T): CallResult<T> {
     json<J = unknown>() {
       const structured = extractStructuredContent(raw);
       const parsedStructured = tryParseJson(structured);
-      if (parsedStructured) {
+      if (parsedStructured !== null) {
         return parsedStructured as J;
       }
 
       const content = extractContentArray(raw);
       if (content) {
         for (const entry of content) {
-          if (entry && typeof entry === 'object' && (entry as Record<string, unknown>).type === 'json') {
+          if (entry && typeof entry === 'object') {
+            const typedEntry = entry as Record<string, unknown>;
+            if (typedEntry.type === 'json') {
+              const parsed = tryParseJson(entry);
+              if (parsed !== null) {
+                return parsed as J;
+              }
+              continue;
+            }
+            if (typedEntry.type === 'text' || typedEntry.type === 'markdown') {
+              const text = asString(entry);
+              if (typeof text === 'string') {
+                const parsedText = tryParseJson(text);
+                if (parsedText !== null) {
+                  return parsedText as J;
+                }
+              }
+              continue;
+            }
+          }
+          if (typeof entry === 'string') {
             const parsed = tryParseJson(entry);
-            if (parsed) {
+            if (parsed !== null) {
               return parsed as J;
             }
           }
+        }
+      }
+
+      if (typeof raw === 'string') {
+        const parsedRaw = tryParseJson(raw);
+        if (parsedRaw !== null) {
+          return parsedRaw as J;
+        }
+      }
+
+      const textContent = this.text?.();
+      if (typeof textContent === 'string') {
+        const parsedText = tryParseJson(textContent);
+        if (parsedText !== null) {
+          return parsedText as J;
+        }
+      }
+
+      const markdownContent = this.markdown?.();
+      if (typeof markdownContent === 'string') {
+        const parsedMarkdown = tryParseJson(markdownContent);
+        if (parsedMarkdown !== null) {
+          return parsedMarkdown as J;
         }
       }
       return null;
