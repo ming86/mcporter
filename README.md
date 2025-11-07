@@ -189,7 +189,7 @@ brew tap steipete/tap
 brew install steipete/tap/mcporter
 ```
 
-> The tap publishes alongside MCPorter 0.3.0. If you run into issues with an older tap install, run `brew update` before reinstalling.
+> The tap publishes alongside MCPorter 0.3.1. If you run into issues with an older tap install, run `brew update` before reinstalling.
 
 ## One-shot calls from code
 

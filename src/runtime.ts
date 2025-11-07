@@ -14,7 +14,7 @@ import { closeTransportAndWait } from './runtime-process-utils.js';
 import './sdk-patches.js';
 
 const PACKAGE_NAME = 'mcporter';
-const CLIENT_VERSION = '0.3.0';
+const CLIENT_VERSION = '0.3.1';
 
 export interface RuntimeOptions {
   readonly configPath?: string;
