@@ -270,6 +270,10 @@ npx mcporter generate-cli \
 #   context7.js        (bundled CLI via esbuild)
 ```
 
+> Convert the chrome-devtools MCP to a CLI via this one weird trick:
+>
+> `npx mcporter generate-cli --command "npx -y chrome-devtools-mcp@latest"`
+
 - `--name` overrides the inferred CLI name.
 - Add `--description "..."` if you want a custom summary in the generated help output.
 - Add `--bundle [path]` to emit an esbuild bundle alongside the template.

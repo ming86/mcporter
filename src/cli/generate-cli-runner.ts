@@ -364,7 +364,7 @@ function inferNameFromCommand(command: CommandInput): string | undefined {
   }
   const script = parts.find((part) => /\.[cm]?(ts|js)x?$/i.test(part));
   if (script) {
-    return slugify(basename(script));
+    return slugify(stripExtension(basename(script)));
   }
   const packageArg = parts.find((_part, index) => index > 0 && /[@/]/.test(_part));
   if (packageArg) {
@@ -385,6 +385,14 @@ function slugify(value: string): string | undefined {
 function basename(value: string): string {
   const segments = value.split(/[\\/]/);
   return segments[segments.length - 1] ?? value;
+}
+
+function stripExtension(value: string): string {
+  const index = value.lastIndexOf('.');
+  if (index === -1) {
+    return value;
+  }
+  return value.slice(0, index);
 }
 
 function deriveNameFromUrl(url: URL): string | undefined {

@@ -41,6 +41,25 @@ describe('generate-cli runner internals', () => {
     expect(inferred).toContain('chrome-devtools');
   });
 
+  it('parses local script commands with extra args', () => {
+    const args = ['--command', 'bun run ./servers/local-cli.ts --stdio --name local'];
+    const parsed = generateInternals.parseGenerateFlags([...args]);
+    const spec = parsed.command as { command: string; args?: string[] };
+    expect(spec.command).toBe('bun');
+    expect(spec.args).toEqual(['run', './servers/local-cli.ts', '--stdio', '--name', 'local']);
+    const inferred = parsed.command !== undefined ? generateInternals.inferNameFromCommand(parsed.command) : undefined;
+    expect(inferred).toBe('local-cli');
+  });
+
+  it('infers package names from scoped arguments', () => {
+    const args = ['--command', 'npx -y @demo/tools@latest serve'];
+    const parsed = generateInternals.parseGenerateFlags([...args]);
+    const spec = parsed.command as { command: string; args?: string[] };
+    expect(spec.args).toEqual(['-y', '@demo/tools@latest', 'serve']);
+    const inferred = parsed.command !== undefined ? generateInternals.inferNameFromCommand(parsed.command) : undefined;
+    expect(inferred).toBe('demo-tools');
+  });
+
   it('builds regenerate commands honoring global flags and invocation overrides', () => {
     const definition: SerializedServerDefinition = {
       name: 'demo',
