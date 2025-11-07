@@ -42,6 +42,12 @@ describe('command inference', () => {
     expect(result).toEqual({ kind: 'command', command: 'call', args: [token, 'limit=1'] });
   });
 
+  it('routes HTTP tool expressions with arguments directly to call', () => {
+    const token = 'https://api.example.com/mcp.getStatus(component: "foo")';
+    const result = inferCommandRouting(token, [], definitions);
+    expect(result).toEqual({ kind: 'command', command: 'call', args: [token] });
+  });
+
   it('suggests names when edit distance is large', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const result = inferCommandRouting('unknown', [], definitions);

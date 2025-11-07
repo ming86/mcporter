@@ -26,7 +26,15 @@ export function looksLikeHttpUrl(value?: string): boolean {
 }
 
 export function splitHttpToolSelector(input: string): { baseUrl: string; tool: string } | null {
-  const normalized = normalizeHttpUrlCandidate(input);
+  const trimmed = input.trim();
+  const candidate = (() => {
+    const openParen = trimmed.indexOf('(');
+    if (openParen === -1) {
+      return trimmed;
+    }
+    return trimmed.slice(0, openParen);
+  })();
+  const normalized = normalizeHttpUrlCandidate(candidate);
   if (!normalized) {
     return null;
   }
