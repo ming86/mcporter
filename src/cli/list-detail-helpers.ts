@@ -22,6 +22,7 @@ export interface ToolDocInput {
   colorize?: boolean;
   exampleMaxLength?: number;
   flagExtras?: FlagUsageExtra[];
+  defaultReturnType?: string;
 }
 
 export interface ToolDocModel {
@@ -186,6 +187,7 @@ export function formatOptionalSummary(hiddenOptions: GeneratedOption[], options?
 
 interface SignatureFormatOptions {
   colorize?: boolean;
+  defaultReturnType?: string;
 }
 
 export function formatFunctionSignature(
@@ -198,7 +200,7 @@ export function formatFunctionSignature(
   const keyword = colorize ? extraDimText('function') : 'function';
   const formattedName = colorize ? cyanText(name) : name;
   const paramsText = options.map((option) => formatInlineParameter(option, colorize)).join(', ');
-  const returnType = inferReturnTypeName(outputSchema);
+  const returnType = inferReturnTypeName(outputSchema) ?? formatOptions?.defaultReturnType;
   const signature = `${keyword} ${formattedName}(${paramsText})`;
   return returnType ? `${signature}: ${returnType};` : `${signature};`;
 }
@@ -294,11 +296,18 @@ export function buildToolDoc(input: ToolDocInput): ToolDocModel {
     colorize = true,
     exampleMaxLength,
     flagExtras,
+    defaultReturnType,
   } = input;
   const { displayOptions, hiddenOptions } = selectDisplayOptions(options, requiredOnly);
   const docLines = buildDocComment(description, options, { colorize });
-  const signature = formatFunctionSignature(toolName, displayOptions, outputSchema, { colorize });
-  const tsSignature = formatFunctionSignature(toolName, displayOptions, outputSchema, { colorize: false });
+  const signature = formatFunctionSignature(toolName, displayOptions, outputSchema, {
+    colorize,
+    defaultReturnType,
+  });
+  const tsSignature = formatFunctionSignature(toolName, displayOptions, outputSchema, {
+    colorize: false,
+    defaultReturnType,
+  });
   const flagUsage = formatFlagUsage(displayOptions, flagExtras, { colorize });
   const optionalSummary = hiddenOptions.length > 0 ? formatOptionalSummary(hiddenOptions, { colorize }) : undefined;
   const optionDocs = options.map((option) => buildOptionDoc(option, { colorize }));

@@ -5,6 +5,7 @@ import { type EphemeralServerSpec, persistEphemeralServer, resolveEphemeralServe
 import { CliUsageError } from './cli/errors.js';
 import { inferCommandRouting } from './cli/command-inference.js';
 import { extractEphemeralServerFlags } from './cli/ephemeral-flags.js';
+import { handleEmitTs } from './cli/emit-ts-command.js';
 import { handleList } from './cli/list-command.js';
 import { formatSourceSuffix } from './cli/list-format.js';
 import { getActiveLogger, getActiveLogLevel, logError, logInfo, logWarn, setLogLevel } from './cli/logger-context.js';
@@ -59,6 +60,20 @@ async function main(): Promise<void> {
 
   if (command === 'regenerate-cli') {
     await handleRegenerateCli(argv, globalFlags);
+    return;
+  }
+
+  if (command === 'emit-ts') {
+    const runtime = await createRuntime({
+      configPath: globalFlags['--config'],
+      rootDir: globalFlags['--root'],
+      logger: getActiveLogger(),
+    });
+    try {
+      await handleEmitTs(runtime, argv);
+    } finally {
+      await runtime.close().catch(() => {});
+    }
     return;
   }
 

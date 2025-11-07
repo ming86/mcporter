@@ -1,110 +1,90 @@
-# `mcporter emit-ts` Plan
+# `mcporter emit-ts`
 
-## Why
-
-Our "agents call TypeScript via our proxy" mode and external integrators both need a
-stable, IDE-friendly description of each MCP server. Today they either scrape
-`mcporter list` output or parse JSON schema on the fly, which is brittle and
-impossible to type-check. An `emit-ts` command gives us a single, reproducible
-artifact (Think `.ts`/`.d.ts`) that mirrors the pseudo-TypeScript we already
-print, so:
-
-- Agents get autocompletion + type safety when composing calls.
-- We can run `tsc` against agent-generated snippets before invoking remote tools.
-- The exported contract doubles as documentation and feeds future generators.
-
-## CLI Surface
+`mcporter emit-ts` turns a configured MCP server into TypeScript artifacts so
+agents, tests, and tooling can consume the server through strongly typed APIs.
+It reuses the same `buildToolDoc()` data that powers `mcporter list`, so doc
+comments, parameter hints, and signatures stay perfectly in sync.
 
 ```
-mcporter emit-ts <server> --out linear-client.ts [--mode types|client] [--include-optional]
+mcporter emit-ts <server> --out linear-client.ts \
+  [--mode types|client] \
+  [--include-optional]
 ```
 
-- Default `--mode types`: emits TypeScript declarations only.
-- `--mode client`: emits executable wrappers that internally use `createServerProxy` and return `CallResult` objects.
-- `--include-optional`: mirror `mcporter list --all-parameters` to include every
-  parameter in the signature.
-- Outputs overwrite existing files automatically (no `--force` needed).
+- `--mode types` (default) emits a `.d.ts` interface (`LinearTools`) with
+docblocks + promisified signatures. Missing output schemas fall back to
+`CallResult`.
+- `--mode client` emits both the interface (auto-derived `.d.ts`) **and** an
+executable `.ts` helper that wraps `createServerProxy`. Each method returns a
+`CallResult`, and the factory exposes a `close()` helper for runtimes the client
+creates.
+- `--include-optional` mirrors `mcporter list --all-parameters`, ensuring every
+parameter is shown even when optional.
 
-## Output Modes
+Outputs overwrite existing files automatically so you can regenerate artifacts
+whenever the server schema changes.
 
-### 1. Types (default)
+## Examples
 
-- File layout:
-  - Header comment with generator metadata + source definition.
-  - `export interface <ServerName>Tools { ... }` – each method matches
-    `ToolDocModel.tsSignature` minus the leading `function` keyword.
-  - Optional type aliases for inferred return types (when schemas expose titles);
-    otherwise return type defaults to `CallResult` (wrapping the raw response).
-  - Doc comments pulled verbatim from `doc.docLines`.
-  - Inline hints (optional summary / flag usage) emitted as `//` comments.
-- Emits a `.d.ts` file by default. When `--mode client` targets `foo.ts`, the
-  interface file becomes `foo.d.ts` unless `--types-out` overrides it.
+### 1. Types-only header
 
-### 2. Client wrappers (`--mode client`)
+```
+mcporter emit-ts linear --out types/linear-tools.d.ts
+```
 
-- Emits the interface (inline or via the `.d.ts`) plus a factory that returns an
-  object whose methods forward to `createServerProxy`. The object’s lifetime is
-  the caller’s responsibility; they pass an existing runtime or the factory
-  creates/closes one if omitted.
-- Example stub:
-  ```ts
-  import { createRuntime, createServerProxy, createCallResult } from 'mcporter';
-  import type { LinearTools } from './linear-client.d.ts';
+Produces:
 
-  export async function createLinearClient(options?: CreateRuntimeOptions) {
-    const runtime = options?.runtime ?? (await createRuntime(options));
-    const proxy = createServerProxy(runtime, 'linear');
-    return {
-      async list_comments(params: Parameters<LinearTools['list_comments']>[0]) {
-        const raw = await proxy.list_comments(params);
-        return createCallResult(raw);
-      },
-      // …
-    } satisfies LinearTools;
-  }
-  ```
-- Because return schemas are often missing, wrappers always resolve to
-  `CallResult`, giving callers a consistent API regardless of server metadata.
+```ts
+import type { CallResult } from 'mcporter';
 
-## Implementation Steps
+export interface LinearTools {
+  /**
+   * List comments for a specific Linear issue.
+   *
+   * @param issueId The issue ID
+   */
+  list_comments(params: { issueId: string }): Promise<CallResult>;
+}
+```
 
-1. **Command wiring**
-   - Add `emit-ts` subcommand (preferred over `--emit-ts` flag) with
-     options: `--server`, `--out`, `--mode`, `--include-optional`, `--types-out`.
-   - Default `--mode types`, derive `.d.ts` path from `--out` when needed.
+Include the file in your agent/project and you can type-check code like
+`const result = await proxy.list_comments({ issueId: '...' });`.
 
-2. **Doc model reuse**
-   - Fetch tools with `includeSchema: true`, map through `buildToolDoc`
-     (respecting `requiredOnly` vs `--include-optional`).
-   - Collect metadata (server name, source path, transport) for header comments.
+### 2. Client wrappers
 
-3. **Templates**
-   - Types template consumes `ToolDocModel` array to emit doc comments + method
-     signatures (no runtime imports). Unknown schemas → `CallResult` return type.
-   - Client template imports the interface (from `.d.ts`), emits factory + helper
-     wrappers that call `createServerProxy` and wrap results with `createCallResult`.
+```
+mcporter emit-ts linear --mode client --out clients/linear.ts
+```
 
-4. **Filesystem**
-   - Write outputs atomically (tmp file + rename) and overwrite existing files.
-   - When `--mode client`, emit both `--out` (client) and derived `.d.ts` unless
-     the user supplies `--types-out`.
-   - Optionally record generator metadata (similar to CLI artifacts) for future
-     inspection.
+Generates two files:
 
-5. **Testing**
-   - Add `tests/emit-ts.test.ts` that runs the command against the integration
-     server. Assertions:
-       * Types mode: snapshot `.d.ts`, run `tsc --noEmit` to ensure validity.
-       * Client mode: snapshot `.ts`, run `ts-node` with a mocked runtime to
-         ensure wrappers call the proxy correctly and return `CallResult`.
+- `clients/linear.d.ts` – same interface as the types-only mode.
+- `clients/linear.ts` – imports `createRuntime`, `createServerProxy`, and
+  `createCallResult`, then exposes a `createLinearClient()` factory:
 
-6. **Docs**
-   - Point `docs/call-syntax.md` (and README) to `docs/emit-ts.md` for usage.
-   - Include before/after snippets demonstrating both modes and how agents
-     consume the outputs.
+```ts
+const client = await createLinearClient({ configPath: './mcporter.json' });
+const comments = await client.list_comments({ issueId: 'LIN-1234' });
+console.log(comments.text());
+await client.close();
+```
 
-## Open Questions
+If you pass an existing runtime (`{ runtime }`), the factory reuses it; the
+returned object’s `close()` becomes a no-op.
 
-- Should client wrappers auto-close runtimes they create? (Default: caller
-  controls lifetime; we may add `withClient` helper later.)
-- Do we support emitting only a subset of tools? (Future enhancement.)
+## Flags
+
+| Flag | Description |
+| --- | --- |
+| `--out <path>` | Required. `.d.ts` target for `types`, `.ts` target for `client`. |
+| `--mode types|client` | Output kind (defaults to `types`). |
+| `--types-out <path>` | Optional override for the `.d.ts` file when `--mode client`. Default: derive from `--out`. |
+| `--include-optional` | Include every parameter (not just the minimum 5 + required). |
+
+## Testing
+
+`tests/emit-ts.test.ts` covers:
+
+- Template rendering (doc comments, `Promise<…>` return types, proxy wrappers).
+- End-to-end CLI invocation with a stub runtime, ensuring both `.ts` and `.d.ts`
+  files are written successfully.

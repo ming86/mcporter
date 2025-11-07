@@ -47,13 +47,14 @@ The goals below align `mcporter list`, the TypeScript CLI generator, and any fut
   3. Added assertions in `tests/list-detail-helpers.test.ts` for the new metadata, keeping the abstraction covered.
 - **Next**: With the model centralised, future surfaces (e.g., `--emit-ts`) can render signatures/examples/options straight from `buildToolDoc`.
 
-## 6. Future TS/DTS Export Mode
+## 6. `emit-ts` Export Mode *(Completed)*
 
-- **Goal**: With the shared doc model in place, add `mcporter list <server> --emit-ts <file>` that writes a proxy interface identical to the generated CLI signatures.
-- **Steps**:
-  1. Reuse `buildToolDoc()` to emit `interface ServerNameTools { … }` plus optional helper functions.
-  2. Add docs describing the flag under `docs/call-syntax.md` or a new `docs/ts-export.md`.
-  3. Integration test: run the command against a fixture server and assert the emitted file matches the snapshot.
+- **Goal**: Provide a typed contract (and optional client) for each MCP server so agents/tools no longer scrape CLI output.
+- **What we did**:
+  1. Added `mcporter emit-ts <server>` with `--mode types|client`, auto-overwriting targets and deriving `.d.ts` names for client mode.
+  2. Reused `buildToolDoc` + new templates to emit interfaces (promisified signatures + doc comments) and executable wrappers that return `CallResult` objects.
+  3. Added `tests/emit-ts.test.ts` to snapshot the templates and run the command end-to-end with a stub runtime; documented the workflow in `docs/emit-ts.md`.
+- **Next**: Consider supporting per-tool filters and shared schema maps inside the generated client for faster cold starts.
 
 ---
 
