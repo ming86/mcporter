@@ -21,6 +21,7 @@ If you are unsure about sth, just google it.
 ## Guardrail Tooling (runner/git wrappers)
 - Use `./runner <command>` for every non-trivial shell command (tests, builds, npm, node, bun, etc.). The Bun-backed runner enforces timeouts, blocks risky subcommands, and keeps logs consistent. Only simple read-only tools (e.g., `cat`, `ls`, `rg`) may bypass it.
 - When you must run git, invoke it through the wrapper: `./runner git status -sb`, `./runner git diff`, or `./runner git log`. Those are the only git subcommands permitted. Never run `git push` unless the user asks explicitly, and even then go through `./runner git push`.
+- These runner/committer rules only apply to this mcporter repo—other repositories should use their own native tooling (no cross-repo runner reuse).
 - Never call `git add` / `git commit` directly. To create a commit, list the exact paths via `./scripts/committer "type: summary" path/to/file1 path/to/file2`.
 - If you need to run the Bun-based git policy helper directly, you can use `./git ...`, but prefer `./runner git ...` so logging stays uniform.
 
