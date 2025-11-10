@@ -255,7 +255,8 @@ describeGenerateCli('generateCli', () => {
       );
     });
     const altContent = await fs.readFile(altOutput, 'utf8');
-    expect(altContent).toContain('const embeddedName = "integration"');
+    expect(altContent).toContain('const embeddedServer =');
+    expect(altContent).toContain('"name": "integration"');
 
     const altMetadata = await readCliMetadata(altOutput);
     expect(altMetadata.artifact.kind).toBe('template');
