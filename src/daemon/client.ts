@@ -181,6 +181,8 @@ export class DaemonClient {
         resolve(value);
       };
       socket.setTimeout(timeoutMs, () => {
+        // If the daemon doesn't answer in time we treat it as a transport error, destroy the socket,
+        // and let invoke() restart the daemon so hung keep-alive servers get a fresh start.
         socket.destroy(Object.assign(new Error('Daemon request timed out.'), { code: 'ETIMEDOUT' }));
       });
       let buffer = '';

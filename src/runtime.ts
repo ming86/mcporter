@@ -199,9 +199,7 @@ class McpRuntime implements Runtime {
     if (!timeoutMs) {
       return resultPromise;
     }
-    return raceWithTimeout(resultPromise, timeoutMs, () => {
-      void this.close(server).catch(() => {});
-    });
+    return raceWithTimeout(resultPromise, timeoutMs);
   }
 
   // listResources delegates to the MCP resources/list method with passthrough params.
@@ -514,10 +512,11 @@ function normalizeTimeout(raw?: number): number | undefined {
   return coerced > 0 ? coerced : undefined;
 }
 
-function raceWithTimeout<T>(promise: Promise<T>, timeoutMs: number, onTimeout?: () => void): Promise<T> {
+function raceWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
-      onTimeout?.();
+      // We reject with a Timeout error but leave the keep-alive transport alone; if the
+      // daemon detects the same stall it will restart that MCP server on its own.
       reject(new Error('Timeout'));
     }, timeoutMs);
     promise.then(

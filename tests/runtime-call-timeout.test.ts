@@ -28,6 +28,6 @@ describe('runtime callTool timeouts', () => {
     const promise = runtime.callTool('temp', 'ping', { timeoutMs: 123 });
     await vi.advanceTimersByTimeAsync(200);
     await expect(promise).rejects.toThrow('Timeout');
-    expect(closeSpy).toHaveBeenCalledWith('temp');
+    expect(closeSpy).not.toHaveBeenCalled();
   });
 });
