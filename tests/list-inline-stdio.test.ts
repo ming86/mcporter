@@ -1,18 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Runtime, ServerToolInfo } from '../src/runtime.js';
-import type { ServerDefinition } from '../src/config.js';
 import { handleList } from '../src/cli/list-command.js';
+import type { ServerDefinition } from '../src/config.js';
+import type { Runtime, ServerToolInfo } from '../src/runtime.js';
 
 function createRuntimeStub() {
   const definitions: ServerDefinition[] = [];
-  const listTools = vi.fn(async (_server: string, _options?: unknown): Promise<ServerToolInfo[]> => [
-    {
-      name: 'doctor',
-      description: 'Runs diagnostics',
-      inputSchema: { type: 'object', properties: {}, required: [] },
-      outputSchema: undefined,
-    },
-  ]);
+  const listTools = vi.fn(
+    async (_server: string, _options?: unknown): Promise<ServerToolInfo[]> => [
+      {
+        name: 'doctor',
+        description: 'Runs diagnostics',
+        inputSchema: { type: 'object', properties: {}, required: [] },
+        outputSchema: undefined,
+      },
+    ]
+  );
 
   const getDefinition = (name: string): ServerDefinition => {
     const found = definitions.find((entry) => entry.name === name);

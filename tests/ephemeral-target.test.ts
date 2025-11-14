@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Runtime } from '../src/runtime.js';
 import { prepareEphemeralServerTarget } from '../src/cli/ephemeral-target.js';
+import type { Runtime } from '../src/runtime.js';
 
 function createRuntimeStub(): Runtime {
   return {
@@ -18,6 +18,9 @@ describe('prepareEphemeralServerTarget', () => {
     });
     expect(target).toBe('xcodebuildmcp');
     expect(resolution?.definition.command.kind).toBe('stdio');
-    expect(resolution?.definition.command.command).toBe('npx');
+    if (resolution?.definition.command.kind !== 'stdio') {
+      throw new Error('Expected stdio command');
+    }
+    expect(resolution.definition.command.command).toBe('npx');
   });
 });

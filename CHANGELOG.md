@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### CLI & runtime
-- _Nothing yet._
+- Runner guardrails now handle `sleep` invocations with missing/empty arguments without crashing, and summary-style selection no longer emits redundant cases, restoring `pnpm lint`/`pnpm typecheck` in local workflows.
 
 ### CLI
 - Ad-hoc STDIO invocations that start with `npx -y <package>` now infer the npm package name (stripping versions and ignoring arguments after `--`) instead of producing slugs like `npx-y`, so repeated `mcporter list|call` runs automatically reuse a readable server key without passing `--name`.
