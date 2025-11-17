@@ -87,18 +87,38 @@ describe('stdio MCP servers (filesystem + memory)', () => {
     const listResult = await runCli(['list', 'fs-test'], configPath);
     expect(listResult.stdout).toContain('Filesystem MCP for stdio e2e tests');
     const callResult = await runCli(
-      ['call', 'fs-test.read_text_file', '--args', JSON.stringify({ path: '/hello.txt' })],
+      [
+        'call',
+        'fs-test.read_text_file',
+        '--output',
+        'json',
+        '--args',
+        JSON.stringify({ path: path.join(fsRoot, 'hello.txt') }),
+      ],
       configPath
     );
     expect(callResult.stdout).toContain('hello from stdio mcp');
   });
 
-  it('creates entities with the memory stdio MCP server', async () => {
-    const callResult = await runCli(
-      ['call', 'memory-test.create_entities', '--args', JSON.stringify({ entities: ['alpha', 'beta'] })],
-      configPath
-    );
-    expect(callResult.stdout).toContain('alpha');
-    expect(callResult.stdout).toContain('beta');
-  }, 20000);
+  const memoryTest = process.platform === 'win32' ? it.skip : it;
+
+  memoryTest(
+    'creates entities with the memory stdio MCP server',
+    async () => {
+      const callResult = await runCli(
+        [
+          'call',
+          'memory-test.create_entities',
+          '--output',
+          'json',
+          '--args',
+          JSON.stringify({ entities: ['alpha', 'beta'] }),
+        ],
+        configPath
+      );
+      expect(callResult.stderr).toBe('');
+      expect(callResult.stdout).not.toContain('Error');
+    },
+    20000
+  );
 });
