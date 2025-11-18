@@ -1,4 +1,4 @@
-const DOMAIN_WITH_PATH_PATTERN = /^[A-Za-z0-9.-]+(?::\d+)?\//;
+const DOMAIN_WITH_PATH_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9.-]*)(?::\d+)?\//;
 
 export function normalizeHttpUrlCandidate(value?: string): string | undefined {
   if (!value) {
