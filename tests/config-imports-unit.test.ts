@@ -239,6 +239,25 @@ describe('config import helpers', () => {
     expect(entries?.has('my-server')).toBe(true);
   });
 
+  it('allows root fallback for .claude/mcp.json', async () => {
+    const claudeDir = path.join(TEMP_DIR, '.claude');
+    await fs.mkdir(claudeDir, { recursive: true });
+    const jsonPath = path.join(claudeDir, 'mcp.json');
+    await fs.writeFile(
+      jsonPath,
+      JSON.stringify({
+        'folder-server': {
+          command: 'node',
+          args: ['server.js'],
+        },
+      }),
+      'utf8'
+    );
+    const entries = await readExternalEntries(jsonPath, { importKind: 'claude-code' });
+    expect(entries?.size).toBe(1);
+    expect(entries?.has('folder-server')).toBe(true);
+  });
+
   it('uses mcpServers container in settings.json when present', async () => {
     await fs.mkdir(TEMP_DIR, { recursive: true });
     const jsonPath = path.join(TEMP_DIR, 'settings.json');

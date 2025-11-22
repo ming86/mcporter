@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import { parse as parseToml } from '@iarna/toml';
 import type { ImportKind, RawEntry } from '../../config-schema.js';
 import { RawEntrySchema } from '../../config-schema.js';
@@ -231,10 +232,10 @@ function resolveContainerDescriptor(
     };
   }
 
-  // For claude-code, only allow root fallback for .claude.json (legacy format)
-  // Settings files like .claude/settings.json require proper mcpServers/servers/mcp containers
+  // For claude-code, only allow root fallback for legacy root-style files (.claude.json, .claude/mcp.json).
+  // Settings files like .claude/settings.json require proper mcpServers/servers/mcp containers.
   if (importKind === 'claude-code' && filePath) {
-    const allowRootFallback = filePath.endsWith('.claude.json');
+    const allowRootFallback = filePath.endsWith('.claude.json') || filePath.endsWith(`${path.sep}mcp.json`);
     return {
       allowMcpServers: true,
       allowServers: true,
