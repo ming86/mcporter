@@ -32,7 +32,7 @@
     "typecheck": "tsgo --project tsconfig.json --noEmit",
     "test": "cross-env MCPORTER_TEST_REPORTER=quiet pnpm test:verbose",
     "test:quiet": "cross-env MCPORTER_TEST_REPORTER=quiet pnpm test:verbose",
-    "test:verbose": "vitest run",
+    "test:verbose": "node scripts/test-runner.js",
     "test:live": "MCP_LIVE_TESTS=1 vitest run tests/live",
     "clean": "rimraf dist",
     "dev": "tsc -w -p tsconfig.build.json",
