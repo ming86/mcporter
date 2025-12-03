@@ -255,6 +255,22 @@ export async function clearOAuthCaches(
     const legacy = new DirectoryPersistence(legacyDir, logger);
     await legacy.clear(scope);
   }
+
+  // Known provider-specific legacy paths (gmail server writes to ~/.gmail-mcp/credentials.json).
+  const legacyFiles: string[] = [];
+  if (definition.name.toLowerCase() === 'gmail') {
+    legacyFiles.push(path.join(os.homedir(), '.gmail-mcp', 'credentials.json'));
+  }
+  await Promise.all(
+    legacyFiles.map(async (file) => {
+      try {
+        await fs.unlink(file);
+        logger?.info?.(`Cleared legacy OAuth cache file ${file}`);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    })
+  );
 }
 
 export async function readCachedAccessToken(definition: ServerDefinition, logger?: Logger): Promise<string | undefined> {
