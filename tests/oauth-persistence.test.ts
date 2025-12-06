@@ -42,7 +42,7 @@ describe('oauth persistence', () => {
     );
 
     // Vault also contains a token, but cache dir should win.
-    const vaultPath = path.join(tmp, '.mcporter', '.credentials.json');
+    const vaultPath = path.join(tmp, '.mcporter', 'credentials.json');
     await fs.mkdir(path.dirname(vaultPath), { recursive: true });
     const definition = mkDef('service', cacheDir);
     const key = vaultKeyForDefinition(definition);
@@ -120,7 +120,7 @@ describe('oauth persistence', () => {
     await fs.mkdir(path.dirname(gmailLegacyFile), { recursive: true });
     await fs.writeFile(gmailLegacyFile, '{}');
 
-    const vaultPath = path.join(tmp, '.mcporter', '.credentials.json');
+    const vaultPath = path.join(tmp, '.mcporter', 'credentials.json');
     await fs.mkdir(path.dirname(vaultPath), { recursive: true });
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as const;
     const definition = mkDef('gmail', cacheDir);

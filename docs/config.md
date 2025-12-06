@@ -147,7 +147,7 @@ Server definition fields (subset of what `RawEntrySchema` accepts):
 | `env` | Key/value pairs applied when launching stdio commands. Supports `${VAR}` interpolation and `${VAR:-fallback}` defaults. Existing process env values win over fallbacks. |
 | `headers` | Request headers for HTTP/SSE transports. Values can reference `$env:VAR` or `${VAR}` placeholders, which must be set at runtime or mcporter aborts with a helpful error.
 | `auth` | Currently only `oauth` is recognized. Any other string is ignored (treated as undefined) to avoid stale state from other clients. |
-| `tokenCacheDir` | Directory for OAuth tokens; still honored, but mcporter now keeps a centralized vault in `~/.mcporter/.credentials.json` (legacy per-server caches are auto-migrated). Supports `~` expansion. |
+| `tokenCacheDir` | Directory for OAuth tokens; still honored, but mcporter now keeps a centralized vault in `~/.mcporter/credentials.json` (legacy per-server caches are auto-migrated). Supports `~` expansion. |
 | `clientName` | Optional identifier some servers use for telemetry/audience segmentation. |
 | `oauthRedirectUrl` | Override the default localhost callback. Useful when tunneling OAuth through Codespaces or remote dev boxes. |
 | `oauthCommand.args` | For STDIO servers that ship a custom auth subcommand (e.g., Gmail MCP). mcporter will spawn the stdio command with these args when you run `mcporter auth <name>`, so you don’t need to call `npx ... auth` manually. |

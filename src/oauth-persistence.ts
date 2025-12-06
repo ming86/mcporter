@@ -122,7 +122,7 @@ class VaultPersistence implements OAuthPersistence {
   constructor(private readonly definition: ServerDefinition) {}
 
   describe(): string {
-    return '~/.mcporter/.credentials.json (vault)';
+    return '~/.mcporter/credentials.json (vault)';
   }
 
   async readTokens(): Promise<OAuthTokens | undefined> {

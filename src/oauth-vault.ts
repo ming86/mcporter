@@ -6,7 +6,7 @@ import type { OAuthClientInformationMixed, OAuthTokens } from '@modelcontextprot
 import type { ServerDefinition } from './config.js';
 import { readJsonFile, writeJsonFile } from './fs-json.js';
 
-const VAULT_PATH = path.join(os.homedir(), '.mcporter', '.credentials.json');
+const VAULT_PATH = path.join(os.homedir(), '.mcporter', 'credentials.json');
 
 type VaultKey = string;
 
